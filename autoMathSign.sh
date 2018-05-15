@@ -1043,7 +1043,7 @@ logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
 
 xcentFile=$(repairXcentFile "$exportPath" "$archivePath")
 if [[ "$xcentFile" ]]; then
-	logit "【xcent 文件修复】拷贝archived-expanded-entitlements.xcent 文件到IPA中"
+	logit "【xcent 文件修复】拷贝archived-expanded-entitlements.xcent 到${xcentFile}"
 fi
 
 checkIPA "$exportPath"
