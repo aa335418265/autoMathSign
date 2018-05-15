@@ -676,7 +676,9 @@ function repairXcentFile
 			cd "${Package_Dir}"  ##必须cd到此目录 ，否则zip会包含绝对路径
 			zip -qry  "$exportPath" Payload >/dev/null 2>&1 && rm -rf Payload
 			cd - >/dev/null 2>&1
-			echo  "${app}/archived-expanded-entitlements.xcent"
+			## 因为重新加压，文件名和路径都没有变化
+			local ipa=$exportPath
+			echo  "$ipa"
 		fi
 	fi
 }
