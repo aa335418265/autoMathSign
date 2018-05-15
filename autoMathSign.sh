@@ -77,7 +77,14 @@ function initXCconfig() {
 ## 解锁keychain
 function unlockKeychain(){
 	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain" 2>/dev/null
+	if [[ $? -ne 0 ]]; then
+		return 1
+	fi
 	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null
+	if [[ $? -ne 0 ]]; then
+		return 1
+	fi
+	return 0
 }
 
 ## 添加一项配置
@@ -646,27 +653,23 @@ function exportIPA() {
 
 
 
-##在打企业包的时候：会报 archived-expanded-entitlements.xcent  文件缺失!这是xcode的bug
+##在包的时候：会报 archived-expanded-entitlements.xcent  文件缺失!这是xcode的bug
 ##链接：http://stackoverflow.com/questions/28589653/mac-os-x-build-server-missing-archived-expanded-entitlements-xcent-file-in-ipa
-## 发现在xcode 8.3.3 或者xcode9 以上都不存在
+## 发现在 xcode >= 8.3.3 以上都不存在 ,在xcode8.2.1 存在
 function repairXcentFile
 {
 
-### 
-
-	
 	local exportPath=$1
 	local archivePath=$2
 
 	local xcodeVersion=$(getXcodeVersion)
 
-	if ! versionCompareGE "$xcodeVersion" "9.0"; then
-
+	## 小于8.3
+	if ! versionCompareGE "$xcodeVersion" "8.3"; then
 		local appName=`basename "$exportPath" .ipa`
 		xcentFile="${archivePath}"/Products/Applications/"${appName}".app/archived-expanded-entitlements.xcent
 		if [[ -f "$xcentFile" ]]; then
-			# logit  "修复xcent文件：\"$xcentFile\" "
-			logit  "archived-expanded-entitlements.xcent 文件：已修复"
+			# baxcent文件从archive中拷贝到IPA中
 			unzip -o "$exportPath" -d /"$Package_Dir" >/dev/null 2>&1
 			local app="${Package_Dir}"/Payload/"${appName}".app
 			cp -af "$xcentFile" "$app" >/dev/null 2>&1
@@ -674,10 +677,10 @@ function repairXcentFile
 			cd "${Package_Dir}"  ##必须cd到此目录 ，否则zip会包含绝对路径
 			zip -qry  "$exportPath" Payload >/dev/null 2>&1 && rm -rf Payload
 			cd - >/dev/null 2>&1
-		else
-			logit  "xcent 无需修复"
+			return 0
 		fi
 	fi
+	return 1
 
 }
 
@@ -1015,7 +1018,12 @@ if [[ "$podfile" ]]; then
 fi
 
 
-unlockKeychain
+unlock=$(unlockKeychain)
+if [[ $unkocl -ne 0 ]]; then
+	logit "【钥匙串】unlock-keychain 失败";
+else
+	logit "【钥匙串】unlock-keychain";
+fi
 
 ## 开始归档。
 
@@ -1035,6 +1043,10 @@ fi
 
 logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
 
+ok=$(repairXcentFile "$exportPath" "$archivePath")
+if [[ $ok == 0 ]]; then
+	logit "【xcent 文件修复】拷贝archived-expanded-entitlements.xcent 文件到IPA中"
+fi
 
 checkIPA "$exportPath"
 
