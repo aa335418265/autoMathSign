@@ -14,6 +14,8 @@
 CMD_PlistBuddy="/usr/libexec/PlistBuddy"
 CMD_Xcodebuild=$(which xcodebuild)
 CMD_Security=$(which security)
+CMD_Lipo=$(which lipo)
+CMD_Codesign=$(which codesign)
 
 
 ##历史备份目录
@@ -141,7 +143,8 @@ function generateOptionsPlist(){
 	</plist>\n
 	"
 	## 重定向
-	echo -e "$plistfileContent" > "$Tmp_Options_Plist_File_Path"
+	echo -e  "$plistfileContent" > "$Tmp_Options_Plist_File_Path"
+	# echo "$plistfileContent" > "$Tmp_Options_Plist_File_Path"
 	echo '$Tmp_Options_Plist_File_Path'
 }
 
@@ -547,10 +550,11 @@ function historyBackup() {
 		## 备份上一次的打包数据
 	if [[ -d "$Package_Dir" ]]; then
 		for name in `ls $Package_Dir` ; do
-			if [[ "$name" == "History" ]] && [[ -d "$Package_Dir$name" ]]; then
+			if [[ "$name" == "History" ]] && [[ -d "$Package_Dir/$name" ]]; then
 				continue;
 			fi
-			mv -f "$Package_Dir/$name" "$Package_Dir/History"
+			cp -rf "$Package_Dir/$name" "$Package_Dir/History"
+			rm -rf "$Package_Dir/$name"
 		done
 	fi
 }
@@ -585,15 +589,30 @@ function archiveBuild()
 	if [[ $? -ne 0 ]]; then
 		errorExit "归档失败，请检查编译日志(编译错误、签名错误等)。"
 	fi
+
+
 	# echo "$archivePath"
 }
 
+
+function testIPA() 
+{	
+	local exportPath='123456'
+	cmd='/usr/bin/xcodebuild -exportArchive -archivePath "/Users/itx/Desktop/PackageLog/Test.xcarchive" -exportPath "/Users/itx/Desktop/PackageLog" -exportOptionsPlist "$Tmp_Options_Plist_File_Path" | xcpretty -c'
+	eval "set -o pipefail && $cmd"
+	if [[ $? -ne 0 ]]; then
+		exit 1
+	fi
+	echo $exportPath
+
+}
 
 function exportIPA() {
 
 	local archivePath=$1
 	local provisionFile=$2
 	local targetName=${archivePath%.*}
+	targetName=${targetName##*/}
 	local xcodeVersion=$(getXcodeVersion)
 	local exportPath="${Package_Dir}"/${targetName}.ipa
 
@@ -614,9 +633,10 @@ function exportIPA() {
 	xcpretty=$(getXcprettyPath)
 	if [[ "$xcpretty" ]]; then
 		## 格式化日志输出
-		cmd="$cmd | xcpretty "
+		cmd="$cmd | xcpretty -c"
 	fi
-	eval "set -o pipefail && $cmd"
+	## 这里需要添加>/dev/null 2>&1; ，否则echo exportPath 作为函数返回参数，会带有其他信息
+	eval "set -o pipefail && $cmd" >/dev/null 2>&1;
 	if [[ $? -ne 0 ]]; then
 		exit 1
 	fi
@@ -657,6 +677,74 @@ function repairXcentFile
 		fi
 	fi
 
+}
+
+
+#构建完成，检查App
+function checkIPA()
+{
+	local exportPath=$1
+	if [[ ! -f "$exportPath" ]]; then
+		exit 1
+	fi
+	local ipaName=`basename "$exportPath" .ipa`
+	##解压强制覆盖，并不输出日志
+	if [[ -d "${Package_Dir}/Payload" ]]; then
+		rm -rf "${Package_Dir}/Payload"
+	fi
+	unzip -o "$exportPath" -d ${Package_Dir} >/dev/null 2>&1
+	
+	local app=${Package_Dir}/Payload/"${ipaName}".app
+	codesign --no-strict -v "$app"
+	if [[ $? -ne 0 ]]; then
+		errorExit "签名检查：签名校验不通过！"
+	fi
+	logit "【签名校验】签名校验通过！"
+	if [[ -d "$app" ]]; then
+		local ipaInfoPlistFile=${app}/Info.plist
+		local mobileProvisionFile=${app}/embedded.mobileprovision
+		local appShowingName=`$CMD_PlistBuddy -c "Print :CFBundleName" $ipaInfoPlistFile`
+		local appBundleId=`$CMD_PlistBuddy -c "print :CFBundleIdentifier" "$ipaInfoPlistFile"`
+		local appVersion=`$CMD_PlistBuddy -c "Print :CFBundleShortVersionString" $ipaInfoPlistFile`
+		local appBuildVersion=`$CMD_PlistBuddy -c "Print :CFBundleVersion" $ipaInfoPlistFile`
+		local appMobileProvisionName=`$CMD_PlistBuddy -c 'Print :Name' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+		local appMobileProvisionCreationDate=`$CMD_PlistBuddy -c 'Print :CreationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+        #授权文件有效时间
+		local appMobileProvisionExpirationDate=`$CMD_PlistBuddy -c 'Print :ExpirationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+		local provisionFileExpirationDays=$(getProvisionfileExpirationDays "$mobileProvisionFile")
+
+
+
+		local provisionType=$(getProfileType "$mobileProvisionFile")
+		local channelName=$(getProfileTypeCNName $provisionType)
+
+		local appCodeSignIdenfifier=$($CMD_Codesign -dvvv "$app" 2>/tmp/log.txt &&  grep Authority /tmp/log.txt | head -n 1 | cut -d "=" -f2)
+		#支持最小的iOS版本
+		local supportMinimumOSVersion=$($CMD_PlistBuddy -c "print :MinimumOSVersion" "$ipaInfoPlistFile")
+		#支持的arch
+		local supportArchitectures=$($CMD_Lipo -info "$app"/"$ipaName" | cut -d ":" -f 3)
+
+		logit "【IPA 信息】名字:$appShowingName"
+		# getEnvirionment
+		# logit "配置环境kBMIsTestEnvironment:$currentEnvironmentValue"
+		logit "【IPA 信息】bundleID:$appBundleId"
+		logit "【IPA 信息】版本:$appVersion"
+		logit "【IPA 信息】build:$appBuildVersion"
+		logit "【IPA 信息】支持最低iOS版本:$supportMinimumOSVersion"
+
+		logit "【IPA 信息】支持的archs:$supportArchitectures"
+		logit "【IPA 信息】签名:$appCodeSignIdenfifier"
+		logit "【IPA 信息】授权文件:${appMobileProvisionName}.mobileprovision"
+		logit "【IPA 信息】授权文件创建时间:$appMobileProvisionCreationDate"
+		logit "【IPA 信息】授权文件过期时间:$appMobileProvisionExpirationDate"
+        logit "【IPA 信息】授权文件有效天数：${provisionFileExpirationDays} 天"
+        logit "【IPA 信息】授权文件分发渠道：${channelName}($provisionType)"
+
+
+
+	else
+		errorExit "解压失败！无法找到$app"
+	fi
 }
 
 
@@ -737,10 +825,9 @@ done
 
 historyBackup
 
+
 if [[ $? -eq 0 ]]; then
-	warning  "备份历史文件失败，忽略此次备份"
-else
-	logit "【数据备份】上一次打包文件已备份到：$Package_Dir/History"
+	logit "【数据备份】上一次打包文件已备份到：$Package_Dir/History"	
 fi
 
 
@@ -943,10 +1030,10 @@ if [[ ! "$exportPath" ]]; then
 	errorExit "IPA导出失败，请检查日志。"
 fi
 
-logit "【IPA导出】IPA导出成功，文件路径：$exportPath"
+logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
 
 
-
+checkIPA "$exportPath"
 
 
 
