@@ -76,7 +76,8 @@ function initXCconfig() {
 
 ## 解锁keychain
 function unlockKeychain(){
-	$CMD_Security unlock-keychain -p "Lihai520" "$HOME/Library/Keychains/login.keychain" 2>/dev/null
+	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain" 2>/dev/null
+	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null
 }
 
 ## 添加一项配置
@@ -1014,7 +1015,7 @@ if [[ "$podfile" ]]; then
 fi
 
 
-
+unlockKeychain
 
 ## 开始归档。
 
