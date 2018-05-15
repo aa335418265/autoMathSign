@@ -661,13 +661,12 @@ function repairXcentFile
 
 	local exportPath=$1
 	local archivePath=$2
-
 	local xcodeVersion=$(getXcodeVersion)
 
-	## 小于8.3
+	## 小于8.3(不包含8.3)
 	if ! versionCompareGE "$xcodeVersion" "8.3"; then
 		local appName=`basename "$exportPath" .ipa`
-		xcentFile="${archivePath}"/Products/Applications/"${appName}".app/archived-expanded-entitlements.xcent
+		local xcentFile="${archivePath}"/Products/Applications/"${appName}".app/archived-expanded-entitlements.xcent
 		if [[ -f "$xcentFile" ]]; then
 			# baxcent文件从archive中拷贝到IPA中
 			unzip -o "$exportPath" -d /"$Package_Dir" >/dev/null 2>&1
@@ -677,11 +676,9 @@ function repairXcentFile
 			cd "${Package_Dir}"  ##必须cd到此目录 ，否则zip会包含绝对路径
 			zip -qry  "$exportPath" Payload >/dev/null 2>&1 && rm -rf Payload
 			cd - >/dev/null 2>&1
-			return 0
+			echo  "${app}/archived-expanded-entitlements.xcent"
 		fi
 	fi
-	return 1
-
 }
 
 
@@ -1013,9 +1010,9 @@ fi
 
 unlock=$(unlockKeychain)
 if [[ $unkocl -ne 0 ]]; then
-	logit "【钥匙串】unlock-keychain 失败";
+	logit "【钥匙串 】unlock-keychain 失败";
 else
-	logit "【钥匙串】unlock-keychain";
+	logit "【钥匙串 】unlock-keychain";
 fi
 
 
@@ -1044,8 +1041,8 @@ fi
 
 logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
 
-ok=$(repairXcentFile "$exportPath" "$archivePath")
-if [[ $ok == 0 ]]; then
+xcentFile=$(repairXcentFile "$exportPath" "$archivePath")
+if [[ "$xcentFile" ]]; then
 	logit "【xcent 文件修复】拷贝archived-expanded-entitlements.xcent 文件到IPA中"
 fi
 
