@@ -21,14 +21,15 @@ CMD_Codesign=$(which codesign)
 ##历史备份目录
 Package_Dir=~/Desktop/PackageLog
 
-##临时文件目录
-Tmp_Options_Plist_File_Path='/tmp/optionsplist.plist'
-Tmp_Log_File_Path=/tmp/`date +"%Y%m%d%H%M%S"`.txt
-Tmp_Xcconfig_File_Path="/tmp/build.xcconfig"
+
 ##脚本工作目录
 Shell_Work_Path=$(pwd)
 ##脚本文件目录
 Shell_File_Path=$(cd `dirname $0`; pwd)
+Tmp_Xcconfig_File_Path="$Shell_File_Path/build.xcconfig"
+Tmp_Log_File_Path="$Package_Dir/`date +"%Y%m%d%H%M%S"`.txt"
+##临时文件目录
+Tmp_Options_Plist_File_Path="$Package_Dir/optionsplist.plist"
 
 
 
@@ -63,7 +64,7 @@ function getXcprettyPath() {
 }
 
 ## 初始化XCconfig配置文件
-function initXCconfig() {
+function initXcconfig() {
 	local xcconfigFile=$Tmp_Xcconfig_File_Path
 	if [[ -f "$xcconfigFile" ]]; then
 		## 清空
@@ -72,6 +73,7 @@ function initXCconfig() {
 		## 生成文件
 		touch "$xcconfigFile"
 	fi
+	echo $xcconfigFile
 }
 
 ## 解锁keychain
@@ -761,13 +763,14 @@ ARCHS='arm64'
 CHANNEL='development'
 ENABLE_BITCODE='NO'
 DEBUG_INFORMATION_FORMAT='dwarf'
-
 AUTO_BUILD_VERSION=false
+UNLOCK_KEYCHAIN_PWD=''
 
 ## 为了方便脚本配置接口环境（测试/正式）,需要3个参数分别是：接口环境配置文件名、接口环境变量名、接口环境变量值
 ENV_FILE_NAME=''
 ENV_VARNAME=''
 ENV_VARVALUE=''
+UNLOCK_KEYCHAIN_PWD=''
 PROVISION_DIR="${HOME}/Library/MobileDevice/Provisioning Profiles"
 
 while [ "$1" != "" ]; do
@@ -988,7 +991,10 @@ logit "【签名身份】匹配签名ID：$codeSignIdentity"
 
 
 ### 进行构建配置信息覆盖，关闭BitCode、签名手动、配置签名等
-initXCconfig 
+xcconfigFile=$(initXcconfig)
+if [[ "$xcconfigFile" ]]; then
+	logit "【签名设置】初始化XCconfig配置文件：$xcconfigFile"
+fi
 
 
 setXCconfigWithKeyValue "ENABLE_BITCODE" "$ENABLE_BITCODE"
