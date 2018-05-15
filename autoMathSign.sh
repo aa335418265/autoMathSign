@@ -78,11 +78,11 @@ function initXcconfig() {
 
 ## 解锁keychain
 function unlockKeychain(){
-	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain" 2>/dev/null
+	$CMD_Security unlock-keychain -p "$UNLOCK_KEYCHAIN_PWD" "$HOME/Library/Keychains/login.keychain" 2>/dev/null
 	if [[ $? -ne 0 ]]; then
 		return 1
 	fi
-	$CMD_Security unlock-keychain -p "123456" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null
+	$CMD_Security unlock-keychain -p "$UNLOCK_KEYCHAIN_PWD" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null
 	if [[ $? -ne 0 ]]; then
 		return 1
 	fi
@@ -795,6 +795,11 @@ while [ "$1" != "" ]; do
             shift
             ARCHS="$1"
             ;;
+        -p| --password )
+            shift
+            UNLOCK_KEYCHAIN_PWD="$1"
+            ;;
+            
       	--enable-bitcode )
             ENABLE_BITCODE='YES'
             ;;
@@ -1016,11 +1021,12 @@ fi
 
 
 
-unlock=$(unlockKeychain)
-if [[ $unkocl -ne 0 ]]; then
-	logit "【钥匙串 】unlock-keychain 失败";
-else
+unlockKeychain
+if [[ $? -eq 0 ]]; then
+	
 	logit "【钥匙串 】unlock-keychain";
+else
+	logit "【钥匙串 】unlock-keychain 失败";
 fi
 
 
