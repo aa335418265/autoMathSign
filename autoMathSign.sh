@@ -354,8 +354,8 @@ function getBuildTargetId()
 	fi
 	local rootObject=$($CMD_PlistBuddy -c "Print :rootObject" "$pbxproj")
 	local targetList=$($CMD_PlistBuddy -c "Print :objects:${rootObject}:targets" "$pbxproj" | sed -e '/Array {/d' -e '/}/d' -e 's/^[ \t]*//')
-	#括号用于初始化数组,例如arr=(1,2,3)
-	local targets=$(echo $targetList);
+	#括号用于初始化数组,例如arr=(1,2,3),括号用于初始化数组,例如arr=(1,2,3)
+	local targets=($(echo $targetList));
 	##这里，只取第一个target,因为默认情况下xcode project 会有自动生成Tests 以及 UITests 两个target
 	local targetId=${targets[0]}
 	echo $targetId
@@ -1011,18 +1011,19 @@ fi
 
 
 
-## podfile 检查
-podfile=$(checkPodfileExist)
-if [[ "$podfile" ]]; then
-	pod install
-fi
-
-
 unlock=$(unlockKeychain)
 if [[ $unkocl -ne 0 ]]; then
 	logit "【钥匙串】unlock-keychain 失败";
 else
 	logit "【钥匙串】unlock-keychain";
+fi
+
+
+
+## podfile 检查
+podfile=$(checkPodfileExist)
+if [[ "$podfile" ]]; then
+	pod install
 fi
 
 ## 开始归档。
