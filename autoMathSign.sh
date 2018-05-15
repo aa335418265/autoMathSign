@@ -26,19 +26,23 @@ Package_Dir=~/Desktop/PackageLog
 Shell_Work_Path=$(pwd)
 ##脚本文件目录
 Shell_File_Path=$(cd `dirname $0`; pwd)
-Tmp_Xcconfig_File_Path="$Shell_File_Path/build.xcconfig"
-Tmp_Log_File_Path="$Package_Dir/`date +"%Y%m%d%H%M%S"`.txt"
+## 用户配置
+Shell_User_Xcconfig_File="$Shell_File_Path/user.xcconfig"
+## 脚本临时生成最终用于构建的配置
+Tmp_Build_Xcconfig_File="$Package_Dir/build.xcconfig"
+Tmp_Log_File="$Package_Dir/`date +"%Y%m%d%H%M%S"`.txt"
 ##临时文件目录
-Tmp_Options_Plist_File_Path="$Package_Dir/optionsplist.plist"
+Tmp_Options_Plist_File="$Package_Dir/optionsplist.plist"
 
 
 
 #############################################基本功能#############################################
 
+
 ## 日志格式化输出
 function logit() {
     echo -e "\033[32m [IPABuildShell] \033[0m $@"
-    echo "	>> $@" >> "$Tmp_Log_File_Path"
+    echo "	>> $@" >> "$Tmp_Log_File"
 }
 
 ## 日志格式化输出
@@ -63,9 +67,9 @@ function getXcprettyPath() {
 	echo $xcprettyPath
 }
 
-## 初始化XCconfig配置文件
-function initXcconfig() {
-	local xcconfigFile=$Tmp_Xcconfig_File_Path
+## 初始化build.xcconfig配置文件
+function initBuildXcconfig() {
+	local xcconfigFile=$Tmp_Build_Xcconfig_File
 	if [[ -f "$xcconfigFile" ]]; then
 		## 清空
 		> "$xcconfigFile"
@@ -74,6 +78,40 @@ function initXcconfig() {
 		touch "$xcconfigFile"
 	fi
 	echo $xcconfigFile
+}
+
+function initUserXcconfig() {
+	if [[ ! -f "$Shell_User_Xcconfig_File" ]]; then
+		exit 1
+	fi
+
+	local allKeys=(CONFIGRATION_TYPE ARCHS CHANNEL ENABLE_BITCODE DEBUG_INFORMATION_FORMAT AUTO_BUILD_VERSION UNLOCK_KEYCHAIN_PWD ENV_FILE_NAME ENV_VARNAME ENV_VARVALUE  PROVISION_DIR)
+
+	for key in ${allKeys[@]}; do
+		local value=$(getXcconfigValue "$Shell_User_Xcconfig_File" "$key")
+		# echo "===$value====="
+		if [[ "$value" ]]; then
+			eval "$key"='$value'
+			logit "【初始化用户配置】${key} = `eval echo "$value"`"
+		fi
+
+	done
+
+	
+
+
+
+}
+
+function getXcconfigValue() {
+	local xcconfigFile=$1
+	local key=$2
+	if [[ ! -f "$xcconfigFile" ]]; then
+		exit 1
+	fi
+	## 去掉//开头 ;  查找key=特征
+	local value=$(grep -v "[ ]*//" "$xcconfigFile" | grep -e "[ ]*$key[ ]*=" | cut -d "=" -f2 | grep -o "[^ ]\+\( \+[^ ]\+\)*")
+	echo $value
 }
 
 ## 解锁keychain
@@ -95,7 +133,7 @@ function setXCconfigWithKeyValue() {
 	local key=$1
 	local value=$2
 
-	local xcconfigFile=$Tmp_Xcconfig_File_Path
+	local xcconfigFile=$Tmp_Build_Xcconfig_File
 	if [[ ! -f "$xcconfigFile" ]]; then
 		exit 1
 	fi
@@ -153,9 +191,9 @@ function generateOptionsPlist(){
 	</plist>\n
 	"
 	## 重定向
-	echo -e  "$plistfileContent" > "$Tmp_Options_Plist_File_Path"
-	# echo "$plistfileContent" > "$Tmp_Options_Plist_File_Path"
-	echo '$Tmp_Options_Plist_File_Path'
+	echo -e  "$plistfileContent" > "$Tmp_Options_Plist_File"
+	# echo "$plistfileContent" > "$Tmp_Options_Plist_File"
+	echo '$Tmp_Options_Plist_File'
 }
 
 ##检查xcodeproj 是否存在
@@ -608,7 +646,7 @@ function archiveBuild()
 function testIPA() 
 {	
 	local exportPath='123456'
-	cmd='/usr/bin/xcodebuild -exportArchive -archivePath "/Users/itx/Desktop/PackageLog/Test.xcarchive" -exportPath "/Users/itx/Desktop/PackageLog" -exportOptionsPlist "$Tmp_Options_Plist_File_Path" | xcpretty -c'
+	cmd='/usr/bin/xcodebuild -exportArchive -archivePath "/Users/itx/Desktop/PackageLog/Test.xcarchive" -exportPath "/Users/itx/Desktop/PackageLog" -exportOptionsPlist "$Tmp_Options_Plist_File" | xcpretty -c'
 	eval "set -o pipefail && $cmd"
 	if [[ $? -ne 0 ]]; then
 		exit 1
@@ -748,10 +786,6 @@ function checkIPA()
 	logit "【IPA 信息】授权文件过期时间:$appMobileProvisionExpirationDate"
     logit "【IPA 信息】授权文件有效天数：${provisionFileExpirationDays} 天"
     logit "【IPA 信息】授权文件分发渠道：${channelName}($provisionType)"
-
-
-
-
 }
 
 
@@ -763,15 +797,37 @@ ARCHS='arm64'
 CHANNEL='development'
 ENABLE_BITCODE='NO'
 DEBUG_INFORMATION_FORMAT='dwarf'
-AUTO_BUILD_VERSION=false
+AUTO_BUILD_VERSION='NO'
 UNLOCK_KEYCHAIN_PWD=''
-
+CODE_SIGN_STYLE='Manual'
 ## 为了方便脚本配置接口环境（测试/正式）,需要3个参数分别是：接口环境配置文件名、接口环境变量名、接口环境变量值
 ENV_FILE_NAME=''
 ENV_VARNAME=''
 ENV_VARVALUE=''
 UNLOCK_KEYCHAIN_PWD=''
 PROVISION_DIR="${HOME}/Library/MobileDevice/Provisioning Profiles"
+
+function usage
+{
+	# setAliasShortCut
+	echo "$(basename $0) -[abcdptx] 使用："
+	echo "  -a | --archs <armv7|arm64|armv7 arm64>: 指定构建架构集，例如：-a 'armv7'或者 -a 'arm64' 或者 -a 'armv7 arm64' 等"
+  	echo "  -b | --bundle-id bundleId: 设置Bundle Id"
+  	echo "  -c | --channel <development|app-store|enterprise>: 指定分发渠道，development 内部分发，app-store商店分发，enterprise企业分发"
+	echo "  -d | --provision-dir dir: 指定授权文件目录，默认会在~/Library/MobileDevice/Provisioning Profiles 中寻找"
+	echo "  -p | --keychain-password passoword: 指定访问证书时解锁钥匙串的密码，即开机密码"
+	echo "  -t | --configration-type  <Debug|Release>: Debug 调试模式, Release 发布模式"
+	echo "  -x: 脚本执行调试模式."
+
+	echo "  --enable-bitcode <YES/NO>: 是否开启BitCode."
+	echo "  --auto-buildversion <YES/NO>: 是否自动修改构建版本号（设置为当前项目的git版本数量）"
+
+
+	echo "  -h | --help : 帮助."
+	exit 0
+}
+
+
 
 while [ "$1" != "" ]; do
     case $1 in
@@ -795,7 +851,7 @@ while [ "$1" != "" ]; do
             shift
             ARCHS="$1"
             ;;
-        -p| --password )
+        -p| --keychain-password )
             shift
             UNLOCK_KEYCHAIN_PWD="$1"
             ;;
@@ -804,7 +860,7 @@ while [ "$1" != "" ]; do
             ENABLE_BITCODE='YES'
             ;;
       	--auto-buildversion )
-            AUTO_BUILD_VERSION=true
+            AUTO_BUILD_VERSION='YES'
             ;;
 
       	--env-filename )
@@ -819,24 +875,21 @@ while [ "$1" != "" ]; do
 			shift
 	        ENV_VARVALUE="$1"
 	        ;;
-        -v | --verbose )
-            VERBOSE="--verbose"
-            ;;
         -h | --help )
             usage
             ;;
         * )
-            [[ -n "$NEW_FILE" ]] && error "Multiple output file names specified!"
-            [[ -z "$NEW_FILE" ]] && NEW_FILE="$1"
+            usage
             ;;
     esac
 
-    # Next arg
     shift
 done
 
 
 historyBackup
+## 初始化用户配置
+initUserXcconfig
 
 
 if [[ $? -eq 0 ]]; then
@@ -913,7 +966,7 @@ logit "【构建信息】InfoPlist 文件：$infoPlistFile"
 
 ## 设置git仓库版本数量
 gitRepositoryVersionNumbers=$(getGitRepositoryVersionNumbers)
-if [[ $AUTO_BUILD_VERSION == true ]] && [[ "$gitRepositoryVersionNumbers" ]]; then
+if [[ "$AUTO_BUILD_VERSION" == "YES" ]] && [[ "$gitRepositoryVersionNumbers" ]]; then
 	setBuildVersion "$infoPlistFile" "$gitRepositoryVersionNumbers"
 	if [[ $? -ne 0 ]]; then
 		warning "设置构建版本号失败，跳过此设置"
@@ -996,7 +1049,7 @@ logit "【签名身份】匹配签名ID：$codeSignIdentity"
 
 
 ### 进行构建配置信息覆盖，关闭BitCode、签名手动、配置签名等
-xcconfigFile=$(initXcconfig)
+xcconfigFile=$(initBuildXcconfig)
 if [[ "$xcconfigFile" ]]; then
 	logit "【签名设置】初始化XCconfig配置文件：$xcconfigFile"
 fi
@@ -1004,7 +1057,7 @@ fi
 
 setXCconfigWithKeyValue "ENABLE_BITCODE" "$ENABLE_BITCODE"
 setXCconfigWithKeyValue "DEBUG_INFORMATION_FORMAT" "$DEBUG_INFORMATION_FORMAT"
-setXCconfigWithKeyValue "CODE_SIGN_STYLE" "Manual"
+setXCconfigWithKeyValue "CODE_SIGN_STYLE" "$CODE_SIGN_STYLE"
 setXCconfigWithKeyValue "PROVISIONING_PROFILE_SPECIFIER" "$provisionFileName" 
 setXCconfigWithKeyValue "PROVISIONING_PROFILE" "$provisionFileUUID"
 setXCconfigWithKeyValue "DEVELOPMENT_TEAM" "$provisionFileTeamID"
@@ -1030,7 +1083,6 @@ else
 fi
 
 
-
 ## podfile 检查
 podfile=$(checkPodfileExist)
 if [[ "$podfile" ]]; then
@@ -1038,10 +1090,9 @@ if [[ "$podfile" ]]; then
 fi
 
 ## 开始归档。
-
 ## 这里使用a=$(...)这种形式会导致xocdebuild日志只能在函数archiveBuild执行完毕的时候输出；
 ## archivePath 在函数archiveBuild 是全局变量
-archiveBuild "$targetName" "$Tmp_Xcconfig_File_Path" 
+archiveBuild "$targetName" "$Tmp_Build_Xcconfig_File" 
 logit "【归档信息】项目构建成功，文件路径：$archivePath"
 
 
