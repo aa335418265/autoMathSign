@@ -647,10 +647,11 @@ function exportIPA() {
 
 ##在打企业包的时候：会报 archived-expanded-entitlements.xcent  文件缺失!这是xcode的bug
 ##链接：http://stackoverflow.com/questions/28589653/mac-os-x-build-server-missing-archived-expanded-entitlements-xcent-file-in-ipa
+## 发现在xcode 8.3.3 或者xcode9 以上都不存在
 function repairXcentFile
 {
 
-### xcode 9.0 已经修复该问题了，所以针对xcode 9.0 以下进行修复。
+### 
 
 	
 	local exportPath=$1
@@ -700,51 +701,52 @@ function checkIPA()
 		errorExit "签名检查：签名校验不通过！"
 	fi
 	logit "【签名校验】签名校验通过！"
-	if [[ -d "$app" ]]; then
-		local ipaInfoPlistFile=${app}/Info.plist
-		local mobileProvisionFile=${app}/embedded.mobileprovision
-		local appShowingName=`$CMD_PlistBuddy -c "Print :CFBundleName" $ipaInfoPlistFile`
-		local appBundleId=`$CMD_PlistBuddy -c "print :CFBundleIdentifier" "$ipaInfoPlistFile"`
-		local appVersion=`$CMD_PlistBuddy -c "Print :CFBundleShortVersionString" $ipaInfoPlistFile`
-		local appBuildVersion=`$CMD_PlistBuddy -c "Print :CFBundleVersion" $ipaInfoPlistFile`
-		local appMobileProvisionName=`$CMD_PlistBuddy -c 'Print :Name' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
-		local appMobileProvisionCreationDate=`$CMD_PlistBuddy -c 'Print :CreationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
-        #授权文件有效时间
-		local appMobileProvisionExpirationDate=`$CMD_PlistBuddy -c 'Print :ExpirationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
-		local provisionFileExpirationDays=$(getProvisionfileExpirationDays "$mobileProvisionFile")
-
-
-
-		local provisionType=$(getProfileType "$mobileProvisionFile")
-		local channelName=$(getProfileTypeCNName $provisionType)
-
-		local appCodeSignIdenfifier=$($CMD_Codesign -dvvv "$app" 2>/tmp/log.txt &&  grep Authority /tmp/log.txt | head -n 1 | cut -d "=" -f2)
-		#支持最小的iOS版本
-		local supportMinimumOSVersion=$($CMD_PlistBuddy -c "print :MinimumOSVersion" "$ipaInfoPlistFile")
-		#支持的arch
-		local supportArchitectures=$($CMD_Lipo -info "$app"/"$ipaName" | cut -d ":" -f 3)
-
-		logit "【IPA 信息】名字:$appShowingName"
-		# getEnvirionment
-		# logit "配置环境kBMIsTestEnvironment:$currentEnvironmentValue"
-		logit "【IPA 信息】bundleID:$appBundleId"
-		logit "【IPA 信息】版本:$appVersion"
-		logit "【IPA 信息】build:$appBuildVersion"
-		logit "【IPA 信息】支持最低iOS版本:$supportMinimumOSVersion"
-
-		logit "【IPA 信息】支持的archs:$supportArchitectures"
-		logit "【IPA 信息】签名:$appCodeSignIdenfifier"
-		logit "【IPA 信息】授权文件:${appMobileProvisionName}.mobileprovision"
-		logit "【IPA 信息】授权文件创建时间:$appMobileProvisionCreationDate"
-		logit "【IPA 信息】授权文件过期时间:$appMobileProvisionExpirationDate"
-        logit "【IPA 信息】授权文件有效天数：${provisionFileExpirationDays} 天"
-        logit "【IPA 信息】授权文件分发渠道：${channelName}($provisionType)"
-
-
-
-	else
+	if [[ ! -d "$app" ]]; then
 		errorExit "解压失败！无法找到$app"
 	fi
+
+	local ipaInfoPlistFile=${app}/Info.plist
+	local mobileProvisionFile=${app}/embedded.mobileprovision
+	local appShowingName=`$CMD_PlistBuddy -c "Print :CFBundleName" $ipaInfoPlistFile`
+	local appBundleId=`$CMD_PlistBuddy -c "print :CFBundleIdentifier" "$ipaInfoPlistFile"`
+	local appVersion=`$CMD_PlistBuddy -c "Print :CFBundleShortVersionString" $ipaInfoPlistFile`
+	local appBuildVersion=`$CMD_PlistBuddy -c "Print :CFBundleVersion" $ipaInfoPlistFile`
+	local appMobileProvisionName=`$CMD_PlistBuddy -c 'Print :Name' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+	local appMobileProvisionCreationDate=`$CMD_PlistBuddy -c 'Print :CreationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+    #授权文件有效时间
+	local appMobileProvisionExpirationDate=`$CMD_PlistBuddy -c 'Print :ExpirationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
+	local provisionFileExpirationDays=$(getProvisionfileExpirationDays "$mobileProvisionFile")
+
+
+
+	local provisionType=$(getProfileType "$mobileProvisionFile")
+	local channelName=$(getProfileTypeCNName $provisionType)
+
+	local appCodeSignIdenfifier=$($CMD_Codesign -dvvv "$app" 2>/tmp/log.txt &&  grep Authority /tmp/log.txt | head -n 1 | cut -d "=" -f2)
+	#支持最小的iOS版本
+	local supportMinimumOSVersion=$($CMD_PlistBuddy -c "print :MinimumOSVersion" "$ipaInfoPlistFile")
+	#支持的arch
+	local supportArchitectures=$($CMD_Lipo -info "$app"/"$ipaName" | cut -d ":" -f 3)
+
+	logit "【IPA 信息】名字:$appShowingName"
+	# getEnvirionment
+	# logit "配置环境kBMIsTestEnvironment:$currentEnvironmentValue"
+	logit "【IPA 信息】bundleID:$appBundleId"
+	logit "【IPA 信息】版本:$appVersion"
+	logit "【IPA 信息】build:$appBuildVersion"
+	logit "【IPA 信息】支持最低iOS版本:$supportMinimumOSVersion"
+
+	logit "【IPA 信息】支持的archs:$supportArchitectures"
+	logit "【IPA 信息】签名:$appCodeSignIdenfifier"
+	logit "【IPA 信息】授权文件:${appMobileProvisionName}.mobileprovision"
+	logit "【IPA 信息】授权文件创建时间:$appMobileProvisionCreationDate"
+	logit "【IPA 信息】授权文件过期时间:$appMobileProvisionExpirationDate"
+    logit "【IPA 信息】授权文件有效天数：${provisionFileExpirationDays} 天"
+    logit "【IPA 信息】授权文件分发渠道：${channelName}($provisionType)"
+
+
+
+
 }
 
 
