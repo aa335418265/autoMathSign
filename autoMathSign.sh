@@ -96,21 +96,20 @@ function initBuildXcconfig() {
 }
 
 function initUserXcconfig() {
-	if [[ ! -f "$Shell_User_Xcconfig_File" ]]; then
-		exit 1
+	if [[ -f "$Shell_User_Xcconfig_File" ]]; then
+		local allKeys=(CONFIGRATION_TYPE ARCHS CHANNEL ENABLE_BITCODE DEBUG_INFORMATION_FORMAT AUTO_BUILD_VERSION UNLOCK_KEYCHAIN_PWD API_ENV_FILE_NAME API_ENV_VARNAME API_ENV_VARVALUE  PROVISION_DIR)
+		for key in ${allKeys[@]}; do
+			local value=$(getXcconfigValue "$Shell_User_Xcconfig_File" "$key")
+			# echo "===$value====="
+			if [[ "$value" ]]; then
+				eval "$key"='$value'
+				logit "【初始化用户配置】${key} = `eval echo "$value"`"
+			fi
+
+		done
 	fi
 
-	local allKeys=(CONFIGRATION_TYPE ARCHS CHANNEL ENABLE_BITCODE DEBUG_INFORMATION_FORMAT AUTO_BUILD_VERSION UNLOCK_KEYCHAIN_PWD API_ENV_FILE_NAME API_ENV_VARNAME API_ENV_VARVALUE  PROVISION_DIR)
 
-	for key in ${allKeys[@]}; do
-		local value=$(getXcconfigValue "$Shell_User_Xcconfig_File" "$key")
-		# echo "===$value====="
-		if [[ "$value" ]]; then
-			eval "$key"='$value'
-			logit "【初始化用户配置】${key} = `eval echo "$value"`"
-		fi
-
-	done
 
 }
 
