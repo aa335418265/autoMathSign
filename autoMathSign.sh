@@ -201,7 +201,7 @@ function generateOptionsPlist(){
 	</plist>\n
 	"
 	## 重定向
-	echo  -e "$plistfileContent" > "$Tmp_Options_Plist_File"
+	echo   "$plistfileContent" > "$Tmp_Options_Plist_File"
 	echo "$Tmp_Options_Plist_File"
 }
 
@@ -630,15 +630,53 @@ function getProfileTypeCNName()
 
 
 
+function finalIPAName ()
+{
+
+	local targetName=$1
+	local apiEnvFile=$2
+	local apiEnvVarName=$3
+	local infoPlistFile=$4
+	local channelName=$5
+
+	if [[ ! -f "$infoPlistFile" ]]; then
+		return;
+	fi
+		## IPA和日志重命名
+	local curDatte=`date +"%Y%m%d_%H%M%S"`
+	local ipaName=${targetName}_${curDatte}
+	local apiEnvValue=$(getIPAEnvValue "$apiEnvFile" "$apiEnvVarName")
+	local projectVersion=$(getProjectVersion "$infoPlistFile")
+	local buildVersion=$(getBuildVersion "$infoPlistFile")
+
+
+
+	if [[ "$apiEnvValue" ]]; then
+		local apiEnvName=''
+		if [[ "$apiEnvValue" == 'YES' ]]; then
+			apiEnvName='生产环境'
+		elif [[ "$apiEnvValue" == 'NO' ]]; then
+			apiEnvName='开发环境'
+		else
+			apiEnvName='未知环境'
+		fi
+		ipaName="$ipaName""_${apiEnvName}"
+	fi
+	ipaName="${ipaName}""_${channelName}""_${projectVersion}""(${buildVersion})"
+	echo "$ipaName"
+}
+
+
+
 ### 开始构建归档，因为该函数里面逻辑较多，所以在里面添加了日志打印
 function archiveBuild()
-{
+{	
+	
 	local targetName=$1
 	local xcconfigFile=$2
-	local xcworkspacePath=$(getXcworkspace)
+	local archivePath=$3
 
-	## 暂时使用全局变量---
-	archivePath="${Package_Dir}"/$targetName.xcarchive
+	local xcworkspacePath=$(getXcworkspace)
 
 
 
@@ -656,13 +694,11 @@ function archiveBuild()
 	fi
 
 	# 执行构建，set -o pipefail 为了获取到管道前一个命令xcodebuild的执行结果，否则$?一直都会是0
-	eval "set -o pipefail && $cmd " 
+	eval "set -o pipefail && $cmd "
 	if [[ $? -ne 0 ]]; then
 		errorExit "归档失败，请检查编译日志(编译错误、签名错误等)。"
 	fi
 
-
-	# echo "$archivePath"
 }
 
 
@@ -671,11 +707,9 @@ function exportIPA() {
 
 	local archivePath=$1
 	local provisionFile=$2
-	local targetName=${archivePath%.*}
-	targetName=${targetName##*/}
 	local xcodeVersion=$(getXcodeVersion)
-	exportPath="${Package_Dir}"/${targetName}.ipa
-
+	local exportPath=$3
+	local targetName=$4
 	if [[ ! -f "$provisionFile" ]]; then
 		exit 1
 	fi
@@ -1122,18 +1156,30 @@ if [[ "$podfile" ]]; then
 	pod install
 fi
 
+
+
+
+ipaName=$(finalIPAName "$targetName" "$apiEnvFile" "$apiEnvVarName" "$infoPlistFile" "$channelName")
+if [[ ! "$ipaName" ]]; then
+	ipaName=$targetName
+fi
+
 ## 开始归档。
-## 这里使用a=$(...)这种形式会导致xocdebuild日志只能在函数archiveBuild执行完毕的时候输出；
-## archivePath 在函数archiveBuild 是全局变量
-archivePath=''
-archiveBuild "$targetName" "$Tmp_Build_Xcconfig_File" 
+
+archivePath="$Package_Dir/$ipaName.xcarchive"
+
+archiveBuild "$targetName" "$Tmp_Build_Xcconfig_File" "$archivePath" 
+
+if [[ ! -d "$archivePath" ]]; then
+	exit 1
+fi
 logit "【归档信息】项目构建成功，文件路径：$archivePath"
 
 
 
 # 开始导出IPA
-exportPath=''
-exportIPA  "$archivePath" "$provisionFile"
+exportPath="$Package_Dir/$ipaName.ipa"
+exportIPA  "$archivePath" "$provisionFile" "$exportPath" "$targetName"
 
 if [[ ! "$exportPath" ]]; then
 	errorExit "IPA导出失败，请检查日志。"
@@ -1185,5 +1231,6 @@ mv "$Tmp_Log_File" 	"${Package_Dir}/${ipaName}.txt"
 ##结束时间
 endTimeSeconds=`date +%s`
 logit "【构建时长】构建时长：$((${endTimeSeconds}-${startTimeSeconds})) 秒"
+
 
 
