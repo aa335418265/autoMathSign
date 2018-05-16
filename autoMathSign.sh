@@ -1203,7 +1203,7 @@ rm -rf "$Package_Dir/DistributionSummary.plist"
 
 
 ## IPA和日志重命名
-
+logit "【IPA 信息】IPA和日志名字格式化..."
 exportDir=${exportPath%/*} 
 ipaName=$(finalIPAName "$targetName" "$apiEnvFile" "$apiEnvVarName" "$infoPlistFile" "$channelName")
 mv "$exportPath" 	"${exportDir}/${ipaName}.ipa"
