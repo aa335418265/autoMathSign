@@ -3,8 +3,8 @@
 
 # ----------------------------------------------------------------------
 # name:         IPABuildShell.sh
-# version:      2.1.0
-# createTime:   2018-05-04
+# version:      2.2.0
+# createTime:   2018-05-16
 # description:  iOS 自动打包
 # author:       冯立海
 # email:        335418265@qq.com
@@ -35,14 +35,13 @@ Tmp_Log_File="$Package_Dir/`date +"%Y%m%d%H%M%S"`.txt"
 Tmp_Options_Plist_File="$Package_Dir/optionsplist.plist"
 
 
-
 #############################################基本功能#############################################
 
 
 ## 日志格式化输出
 function logit() {
     echo -e "\033[32m [IPABuildShell] \033[0m $@"
-    echo "	>> $@" >> "$Tmp_Log_File"
+    echo "$@" >> "$Tmp_Log_File"
 }
 
 ## 日志格式化输出
@@ -60,6 +59,22 @@ function warning(){
 
 ##字符串版本号比较：大于等于
 function versionCompareGE() { test "$(echo "$@" | tr " " "\n" | sort -rn | head -n 1)" == "$1"; }
+
+## 备份历史数据
+function historyBackup() {
+
+		## 备份上一次的打包数据
+	if [[ -d "$Package_Dir" ]]; then
+		for name in `ls $Package_Dir` ; do
+			if [[ "$name" == "History" ]] && [[ -d "$Package_Dir/$name" ]]; then
+				continue;
+			fi
+			cp -rf "$Package_Dir/$name" "$Package_Dir/History"
+			rm -rf "$Package_Dir/$name"
+		done
+	fi
+}
+
 
 ## 获取xcpretty安装路径
 function getXcprettyPath() {
@@ -85,7 +100,7 @@ function initUserXcconfig() {
 		exit 1
 	fi
 
-	local allKeys=(CONFIGRATION_TYPE ARCHS CHANNEL ENABLE_BITCODE DEBUG_INFORMATION_FORMAT AUTO_BUILD_VERSION UNLOCK_KEYCHAIN_PWD ENV_FILE_NAME ENV_VARNAME ENV_VARVALUE  PROVISION_DIR)
+	local allKeys=(CONFIGRATION_TYPE ARCHS CHANNEL ENABLE_BITCODE DEBUG_INFORMATION_FORMAT AUTO_BUILD_VERSION UNLOCK_KEYCHAIN_PWD API_ENV_FILE_NAME API_ENV_VARNAME API_ENV_VARVALUE  PROVISION_DIR)
 
 	for key in ${allKeys[@]}; do
 		local value=$(getXcconfigValue "$Shell_User_Xcconfig_File" "$key")
@@ -96,10 +111,6 @@ function initUserXcconfig() {
 		fi
 
 	done
-
-	
-
-
 
 }
 
@@ -191,9 +202,8 @@ function generateOptionsPlist(){
 	</plist>\n
 	"
 	## 重定向
-	echo -e  "$plistfileContent" > "$Tmp_Options_Plist_File"
-	# echo "$plistfileContent" > "$Tmp_Options_Plist_File"
-	echo '$Tmp_Options_Plist_File'
+	echo  -e "$plistfileContent" > "$Tmp_Options_Plist_File"
+	echo "$Tmp_Options_Plist_File"
 }
 
 ##检查xcodeproj 是否存在
@@ -226,6 +236,25 @@ function  checkPodfileExist() {
 }
 
 
+function getProjectVersion() {
+	local infoPlistFile=$1
+	if [[ ! -f "$infoPlistFile" ]]; then
+		exit 1
+	fi
+	local projectVersion=$($CMD_PlistBuddy -c "Print :CFBundleShortVersionString"  "$infoPlistFile")
+
+	echo $projectVersion
+}
+function getBuildVersion() {
+	local infoPlistFile=$1
+	if [[ ! -f "$infoPlistFile" ]]; then
+		exit 1
+	fi
+	local projectVersion=$($CMD_PlistBuddy -c "Print :CFBundleVersion"  "$infoPlistFile")
+
+	echo $projectVersion
+}
+
 ## 获取git仓库版本数量
 function getGitRepositoryVersionNumbers (){
 		## 是否存在.git目录
@@ -255,7 +284,7 @@ function setBuildVersion () {
 
 ##获取签名方式,##设置手动签名,即不勾选：Xcode -> General -> Signing -> Automatically manage signning
 ## 在xcode 9之前（不包含9），只有在General这里配置是否手动签名，在xcode9之后，多加了一项在setting中
-function getCodeSigningStyle
+function getCodeSigningStyle ()
 {
 
 	local pbxproj=$1/project.pbxproj
@@ -271,7 +300,7 @@ function getCodeSigningStyle
 }
 
 ##设置签名方式（手动/自动）
-function setManulCodeSigning
+function setManulCodeSigning ()
 {
 	local pbxproj=$1/project.pbxproj
 	local targetId=$2
@@ -280,7 +309,7 @@ function setManulCodeSigning
 	$CMD_PlistBuddy -c "Set :objects:$rootObject:attributes:TargetAttributes:$targetId:ProvisioningStyle Manual" "$pbxproj"
 }
 
-function addManulCodeSigning
+function addManulCodeSigning ()
 {
 	local pbxproj=$1/project.pbxproj
 	local targetId=$2
@@ -292,7 +321,7 @@ function addManulCodeSigning
 
 #获取,会在当前脚本执行目录以及5级内的子目录下自动寻找
 
-function findAIPEnvFile () {
+function findIPAEnvFile () {
 
 	local fileName=$1
 	## 如果直接是全路径文件,直接返回
@@ -310,18 +339,18 @@ function findAIPEnvFile () {
 }
 
 ## 获取接口环境的值
-function getIPEnvValue () {
+function getIPAEnvValue () {
 	local apiEnvFile=$1
 	local apiEnvVarName=$2
 
 	if [[ ! -f "$apiEnvFile" ]]; then
 		exit 1
 	fi
-	local apiEnvVarValue=$(grep "$apiEnvVarName" "$apiEnvFile" | grep -v '^//' | cut -d ";" -f 1 | cut -d "=" -f 2 | sed 's/^[ \t]*//g' | sed 's/[ \t]*$//g')
-	echo $apiEnvVarValue
+	local apiEnvValue=$(grep "$apiEnvVarName" "$apiEnvFile" | grep -v '^//' | cut -d ";" -f 1 | cut -d "=" -f 2 | sed 's/^[ \t]*//g' | sed 's/[ \t]*$//g')
+	echo $apiEnvValue
 }
 
-function setAIPEnvFile () {
+function setIPAEnvFile () {
 	local apiEnvFile=$1
 	local apiEnvVarName=$2
 	local apiEnvVarValue=$3
@@ -516,17 +545,24 @@ function matchMobileProvisionFile()
 		exit 1
 	fi
 	##遍历
+	local provisionFile=''
+	local provisionFileExpirationDays=0
+
 	for file in "${mobileProvisionFileDir}"/*.mobileprovision; do
 		local bundleIdFromProvisionFile=$(getProfileBundleId "$file")
 		if [[ "$bundleIdFromProvisionFile" ]] && [[ "$appBundleId" == "$bundleIdFromProvisionFile" ]]; then
 			local profileType=$(getProfileType "$file")
 			if [[ "$profileType" == "$channel" ]]; then
-				echo "$file"
-				return 
+				local expirationDays=$(getProvisionfileExpirationDays "$file")
+				## 匹配到有效天数最大的授权文件
+				if [[ $expirationDays -gt $provisionFileExpirationDays ]]; then
+					provisionFile=$file
+					provisionFileExpirationDays=$expirationDays
+				fi
 			fi
 		fi
 	done
-	exit 1
+	echo $provisionFile
 }
 
 
@@ -593,19 +629,7 @@ function getProfileTypeCNName()
 
 }
 
-function historyBackup() {
 
-		## 备份上一次的打包数据
-	if [[ -d "$Package_Dir" ]]; then
-		for name in `ls $Package_Dir` ; do
-			if [[ "$name" == "History" ]] && [[ -d "$Package_Dir/$name" ]]; then
-				continue;
-			fi
-			cp -rf "$Package_Dir/$name" "$Package_Dir/History"
-			rm -rf "$Package_Dir/$name"
-		done
-	fi
-}
 
 ### 开始构建归档，因为该函数里面逻辑较多，所以在里面添加了日志打印
 function archiveBuild()
@@ -643,17 +667,6 @@ function archiveBuild()
 }
 
 
-function testIPA() 
-{	
-	local exportPath='123456'
-	cmd='/usr/bin/xcodebuild -exportArchive -archivePath "/Users/itx/Desktop/PackageLog/Test.xcarchive" -exportPath "/Users/itx/Desktop/PackageLog" -exportOptionsPlist "$Tmp_Options_Plist_File" | xcpretty -c'
-	eval "set -o pipefail && $cmd"
-	if [[ $? -ne 0 ]]; then
-		exit 1
-	fi
-	echo $exportPath
-
-}
 
 function exportIPA() {
 
@@ -662,7 +675,7 @@ function exportIPA() {
 	local targetName=${archivePath%.*}
 	targetName=${targetName##*/}
 	local xcodeVersion=$(getXcodeVersion)
-	local exportPath="${Package_Dir}"/${targetName}.ipa
+	exportPath="${Package_Dir}"/${targetName}.ipa
 
 	if [[ ! -f "$provisionFile" ]]; then
 		exit 1
@@ -683,12 +696,11 @@ function exportIPA() {
 		## 格式化日志输出
 		cmd="$cmd | xcpretty -c"
 	fi
-	## 这里需要添加>/dev/null 2>&1; ，否则echo exportPath 作为函数返回参数，会带有其他信息
-	eval "set -o pipefail && $cmd" >/dev/null 2>&1;
+	# 这里需要添加>/dev/null 2>&1; ，否则echo exportPath 作为函数返回参数，会带有其他信息
+	eval "set -o pipefail && $cmd" ;
 	if [[ $? -ne 0 ]]; then
 		exit 1
 	fi
-	echo $exportPath
 }
 
 
@@ -696,7 +708,7 @@ function exportIPA() {
 ##在包的时候：会报 archived-expanded-entitlements.xcent  文件缺失!这是xcode的bug
 ##链接：http://stackoverflow.com/questions/28589653/mac-os-x-build-server-missing-archived-expanded-entitlements-xcent-file-in-ipa
 ## 发现在 xcode >= 8.3.3 以上都不存在 ,在xcode8.2.1 存在
-function repairXcentFile
+function repairXcentFile()
 {
 
 	local exportPath=$1
@@ -759,12 +771,8 @@ function checkIPA()
     #授权文件有效时间
 	local appMobileProvisionExpirationDate=`$CMD_PlistBuddy -c 'Print :ExpirationDate' /dev/stdin <<< $($CMD_Security cms -D -i "$mobileProvisionFile" 2>/dev/null)`
 	local provisionFileExpirationDays=$(getProvisionfileExpirationDays "$mobileProvisionFile")
-
-
-
 	local provisionType=$(getProfileType "$mobileProvisionFile")
 	local channelName=$(getProfileTypeCNName $provisionType)
-
 	local appCodeSignIdenfifier=$($CMD_Codesign -dvvv "$app" 2>/tmp/log.txt &&  grep Authority /tmp/log.txt | head -n 1 | cut -d "=" -f2)
 	#支持最小的iOS版本
 	local supportMinimumOSVersion=$($CMD_PlistBuddy -c "print :MinimumOSVersion" "$ipaInfoPlistFile")
@@ -778,7 +786,6 @@ function checkIPA()
 	logit "【IPA 信息】版本:$appVersion"
 	logit "【IPA 信息】build:$appBuildVersion"
 	logit "【IPA 信息】支持最低iOS版本:$supportMinimumOSVersion"
-
 	logit "【IPA 信息】支持的archs:$supportArchitectures"
 	logit "【IPA 信息】签名:$appCodeSignIdenfifier"
 	logit "【IPA 信息】授权文件:${appMobileProvisionName}.mobileprovision"
@@ -786,6 +793,9 @@ function checkIPA()
 	logit "【IPA 信息】授权文件过期时间:$appMobileProvisionExpirationDate"
     logit "【IPA 信息】授权文件有效天数：${provisionFileExpirationDays} 天"
     logit "【IPA 信息】授权文件分发渠道：${channelName}($provisionType)"
+
+    ## 清除解压出来的Playload
+    rm -rf ${Package_Dir}/Payload
 }
 
 
@@ -800,30 +810,35 @@ DEBUG_INFORMATION_FORMAT='dwarf'
 AUTO_BUILD_VERSION='NO'
 UNLOCK_KEYCHAIN_PWD=''
 CODE_SIGN_STYLE='Manual'
-## 为了方便脚本配置接口环境（测试/正式）,需要3个参数分别是：接口环境配置文件名、接口环境变量名、接口环境变量值
-ENV_FILE_NAME=''
-ENV_VARNAME=''
-ENV_VARVALUE=''
 UNLOCK_KEYCHAIN_PWD=''
 PROVISION_DIR="${HOME}/Library/MobileDevice/Provisioning Profiles"
+## 为了方便脚本配置接口环境（测试/正式）,需要3个参数分别是：接口环境配置文件名、接口环境变量名、接口环境变量值
+##是否是生产环境，默认为空不做任何修改
+API_ENV_PRODUCTION=''
+API_ENV_FILE_NAME=''
+API_ENV_VARNAME=''
+
+
+
 
 function usage
 {
 	# setAliasShortCut
-	echo "$(basename $0) -[abcdptx] 使用："
-	echo "  -a | --archs <armv7|arm64|armv7 arm64>: 指定构建架构集，例如：-a 'armv7'或者 -a 'arm64' 或者 -a 'armv7 arm64' 等"
-  	echo "  -b | --bundle-id bundleId: 设置Bundle Id"
-  	echo "  -c | --channel <development|app-store|enterprise>: 指定分发渠道，development 内部分发，app-store商店分发，enterprise企业分发"
-	echo "  -d | --provision-dir dir: 指定授权文件目录，默认会在~/Library/MobileDevice/Provisioning Profiles 中寻找"
-	echo "  -p | --keychain-password passoword: 指定访问证书时解锁钥匙串的密码，即开机密码"
-	echo "  -t | --configration-type  <Debug|Release>: Debug 调试模式, Release 发布模式"
-	echo "  -x: 脚本执行调试模式."
+	echo ""
+	echo "Usage:$(basename $0) -[abcdptx] [--enable-bitcode YES/NO] [--auto-buildversion YES/NO] ..."
+	echo "可选项："
+	echo "  -a | --archs 	<armv7|arm64|armv7 arm64> 	指定构建架构集，例如：-a 'armv7'或者 -a 'arm64' 或者 -a 'armv7 arm64' 等"
+  	echo "  -b | --bundle-id bundleId 			设置Bundle Id"
+  	echo "  -c | --channel <development|app-store|enterprise> 	指定分发渠道，development 内部分发，app-store商店分发，enterprise企业分发"
+	echo "  -d | --provision-dir dir 			指定授权文件目录，默认会在~/Library/MobileDevice/Provisioning Profiles 中寻找"
+	echo "  -p | --keychain-password passoword 		指定访问证书时解锁钥匙串的密码，即开机密码"
+	echo "  -t | --configration-type  <Debug|Release> 	Debug 调试模式, Release 发布模式"
+	echo "  -h | --help					帮助."
+	echo "  -x 						脚本执行调试模式."
 
-	echo "  --enable-bitcode <YES/NO>: 是否开启BitCode."
-	echo "  --auto-buildversion <YES/NO>: 是否自动修改构建版本号（设置为当前项目的git版本数量）"
+	echo "  --enable-bitcode <YES/NO> 			是否开启BitCode."
+	echo "  --auto-buildversion <YES/NO>			是否自动修改构建版本号（设置为当前项目的git版本数量）"
 
-
-	echo "  -h | --help : 帮助."
 	exit 0
 }
 
@@ -855,6 +870,10 @@ while [ "$1" != "" ]; do
             shift
             UNLOCK_KEYCHAIN_PWD="$1"
             ;;
+        -e| --api-environment )
+            shift
+            API_ENVIRONMENT="$1"
+            ;;
             
       	--enable-bitcode )
             ENABLE_BITCODE='YES'
@@ -865,15 +884,15 @@ while [ "$1" != "" ]; do
 
       	--env-filename )
 			shift
-            ENV_FILE_NAME="$1"
+            API_ENV_FILE_NAME="$1"
             ;;
     	--env-varname)
 			shift
-	        ENV_VARNAME="$1"
+	        API_ENV_VARNAME="$1"
 	        ;;
-    	--env-varvalue)
+    	--env-production)
 			shift
-	        ENV_VARVALUE="$1"
+	        API_ENV_PRODUCTION="$1"
 	        ;;
         -h | --help )
             usage
@@ -885,6 +904,11 @@ while [ "$1" != "" ]; do
 
     shift
 done
+
+
+
+##构建开始时间
+startTimeSeconds=`date +%s`
 
 
 historyBackup
@@ -978,18 +1002,23 @@ if [[ "$AUTO_BUILD_VERSION" == "YES" ]] && [[ "$gitRepositoryVersionNumbers" ]];
 fi
 
 ## 设置环境变量
-apiEnvFile=$(findAIPEnvFile "$ENV_FILE_NAME")
-if [[ "$apiEnvFile" ]]; then
-	logit "【构建信息】API环境配置文件：$apiEnvFile"
-	if [[ "$ENV_VARNAME" ]] && [[ "$ENV_VARVALUE" ]]; then
-		setAIPEnvFile "$apiEnvFile" "$ENV_VARNAME" "$ENV_VARVALUE"
-		if [[ $? -ne 0 ]]; then
-			warning "设置API环境变量失败，跳过此设置"
-		else
-			logit "【构建信息】设置API环境变量：$ENV_VARNAME = $ENV_VARVALUE"
+apiEnvFile=$(findIPAEnvFile "$API_ENV_FILE_NAME")
+if [[ "$API_ENV_PRODUCTION" ]]; then
+	if [[ "$apiEnvFile" ]]; then
+		logit "【构建信息】API环境配置文件：$apiEnvFile"
+		if [[ "$API_ENV_VARNAME" ]] ; then
+			setIPAEnvFile "$apiEnvFile" "$API_ENV_VARNAME" "$API_ENV_PRODUCTION"
+
+			if [[ $? -ne 0 ]]; then
+				warning "设置API环境变量失败，跳过此设置"
+			else
+				logit "【构建信息】设置API环境变量：$API_ENV_VARNAME = $API_ENV_PRODUCTION"
+			fi
 		fi
 	fi
+
 fi
+
 
 
 ## 设置手动签名
@@ -1011,6 +1040,9 @@ else
 		fi
 	fi
 fi
+
+
+
 
 
 ## 匹配授权文件
@@ -1035,6 +1067,8 @@ logit "【授权文件】匹配文件TeamID：${provisionFileTeamID}"
 logit "【授权文件】匹配文件UUID：${provisionFileUUID}"
 logit "【授权文件】匹配文件分发渠道：${CHANNEL}(${channelName})"
 logit "【授权文件】匹配文件有效天数：${provisionFileExpirationDays}"
+
+
 
 
 ## 匹配签名ID
@@ -1092,18 +1126,19 @@ fi
 ## 开始归档。
 ## 这里使用a=$(...)这种形式会导致xocdebuild日志只能在函数archiveBuild执行完毕的时候输出；
 ## archivePath 在函数archiveBuild 是全局变量
+archivePath=''
 archiveBuild "$targetName" "$Tmp_Build_Xcconfig_File" 
 logit "【归档信息】项目构建成功，文件路径：$archivePath"
 
 
 
 # 开始导出IPA
-exportPath=$(exportIPA  "$archivePath" "$provisionFile")
+exportPath=''
+exportIPA  "$archivePath" "$provisionFile"
 
 if [[ ! "$exportPath" ]]; then
 	errorExit "IPA导出失败，请检查日志。"
 fi
-
 logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
 
 xcentFile=$(repairXcentFile "$exportPath" "$archivePath")
@@ -1111,14 +1146,45 @@ if [[ "$xcentFile" ]]; then
 	logit "【xcent 文件修复】拷贝archived-expanded-entitlements.xcent 到${xcentFile}"
 fi
 
+## 检查IPA
 checkIPA "$exportPath"
 
+##清理临时文件
+rm -rf "$Tmp_Options_Plist_File"
+rm -rf "$Tmp_Build_Xcconfig_File"
+rm -rf "$archivePath"
+rm -rf "$Package_Dir/Packaging.log"
+rm -rf "$Package_Dir/ExportOptions.plist"
+rm -rf "$Package_Dir/DistributionSummary.plist"
 
 
 
 
+## IPA和日志重命名
+curDatte=`date +"%Y%m%d_%H%M%S"`
+ipaName=${targetName}_${curDatte}
+apiEnvValue=$(getIPAEnvValue "$apiEnvFile" "$apiEnvVarName")
+projectVersion=$(getProjectVersion "$infoPlistFile")
+buildVersion=$(getBuildVersion "$infoPlistFile")
 
+if [[ "$apiEnvValue" ]]; then
+	local apiEnvName=''
+	if [[ "$apiEnvValue" == 'YES' ]]; then
+		apiEnvName='生产环境'
+	elif [[ "$apiEnvValue" == 'NO' ]]; then
+		apiEnvName='开发环境'
+	else
+		apiEnvName='未知环境'
+	fi
+	ipaName="$ipaName""_${apiEnvName}"
+fi
+ipaName="${ipaName}""_${channelName}""_${projectVersion}""(${buildVersion})"
 
+mv "$exportPath" 	"${Package_Dir}/${ipaName}.ipa"
+mv "$Tmp_Log_File" 	"${Package_Dir}/${ipaName}.txt"
 
+##结束时间
+endTimeSeconds=`date +%s`
+logit "【构建时长】构建时长：$((${endTimeSeconds}-${startTimeSeconds})) 秒"
 
 
