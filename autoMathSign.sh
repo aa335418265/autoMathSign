@@ -281,6 +281,42 @@ function setBuildVersion () {
 	$CMD_PlistBuddy -c "Set :CFBundleVersion $buildVersion" "$infoPlistFile"
 }
 
+function finalIPAName ()
+{
+
+	local targetName=$1
+	local apiEnvFile=$2
+	local apiEnvVarName=$3
+	local infoPlistFile=$4
+	local channelName=$5
+
+	if [[ ! -f "$infoPlistFile" ]]; then
+		return;
+	fi
+		## IPA和日志重命名
+	local curDatte=`date +"%Y%m%d_%H%M%S"`
+	local ipaName=${targetName}_${curDatte}
+	local apiEnvValue=$(getIPAEnvValue "$apiEnvFile" "$apiEnvVarName")
+	local projectVersion=$(getProjectVersion "$infoPlistFile")
+	local buildVersion=$(getBuildVersion "$infoPlistFile")
+
+
+
+	if [[ "$apiEnvValue" ]]; then
+		local apiEnvName=''
+		if [[ "$apiEnvValue" == 'YES' ]]; then
+			apiEnvName='生产环境'
+		elif [[ "$apiEnvValue" == 'NO' ]]; then
+			apiEnvName='开发环境'
+		else
+			apiEnvName='未知环境'
+		fi
+		ipaName="$ipaName""_${apiEnvName}"
+	fi
+	ipaName="${ipaName}""_${channelName}""_${projectVersion}""(${buildVersion})"
+	echo "$ipaName"
+}
+
 
 ##获取签名方式,##设置手动签名,即不勾选：Xcode -> General -> Signing -> Automatically manage signning
 ## 在xcode 9之前（不包含9），只有在General这里配置是否手动签名，在xcode9之后，多加了一项在setting中
@@ -755,7 +791,7 @@ function checkIPA()
 	if [[ $? -ne 0 ]]; then
 		errorExit "签名检查：签名校验不通过！"
 	fi
-	logit "【签名校验】签名校验通过！"
+	logit "【签名校验】签名校验通过"
 	if [[ ! -d "$app" ]]; then
 		errorExit "解压失败！无法找到$app"
 	fi
@@ -1139,7 +1175,14 @@ exportIPA  "$archivePath" "$provisionFile"
 if [[ ! "$exportPath" ]]; then
 	errorExit "IPA导出失败，请检查日志。"
 fi
+
 logit "【IPA 导出】IPA导出成功，文件路径：$exportPath"
+
+if [[ ! "$ipaName" ]]; then
+	ipaName=$targetName
+fi
+
+
 
 xcentFile=$(repairXcentFile "$exportPath" "$archivePath")
 if [[ "$xcentFile" ]]; then
@@ -1161,27 +1204,13 @@ rm -rf "$Package_Dir/DistributionSummary.plist"
 
 
 ## IPA和日志重命名
-curDatte=`date +"%Y%m%d_%H%M%S"`
-ipaName=${targetName}_${curDatte}
-apiEnvValue=$(getIPAEnvValue "$apiEnvFile" "$apiEnvVarName")
-projectVersion=$(getProjectVersion "$infoPlistFile")
-buildVersion=$(getBuildVersion "$infoPlistFile")
 
-if [[ "$apiEnvValue" ]]; then
-	local apiEnvName=''
-	if [[ "$apiEnvValue" == 'YES' ]]; then
-		apiEnvName='生产环境'
-	elif [[ "$apiEnvValue" == 'NO' ]]; then
-		apiEnvName='开发环境'
-	else
-		apiEnvName='未知环境'
-	fi
-	ipaName="$ipaName""_${apiEnvName}"
-fi
-ipaName="${ipaName}""_${channelName}""_${projectVersion}""(${buildVersion})"
-
-mv "$exportPath" 	"${Package_Dir}/${ipaName}.ipa"
-mv "$Tmp_Log_File" 	"${Package_Dir}/${ipaName}.txt"
+exportDir=${exportPath%/*} 
+ipaName=$(finalIPAName "$targetName" "$apiEnvFile" "$apiEnvVarName" "$infoPlistFile" "$channelName")
+mv "$exportPath" 	"${exportDir}/${ipaName}.ipa"
+mv "$Tmp_Log_File" 	"${exportDir}/${ipaName}.txt"
+logit "【IPA 信息】IPA路径:${exportDir}/${ipaName}.ipa"
+logit "【IPA 信息】日志路径:${exportDir}/${ipaName}.txt"
 
 ##结束时间
 endTimeSeconds=`date +%s`
